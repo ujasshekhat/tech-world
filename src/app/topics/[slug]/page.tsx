@@ -1,3 +1,5 @@
+"use client";
+
 import React, { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronRight, Bookmark, CheckSquare, BookOpen, Layers, Terminal, ShieldAlert, Award, FileCode2, ClipboardList, PenTool, GraduationCap } from "lucide-react";
@@ -9,15 +11,7 @@ import { Flashcards } from "@/components/docs/Flashcards";
 import { InteractiveQuiz } from "@/components/docs/InteractiveQuiz";
 import { getTopicData } from "@/lib/topics-data";
 import { useUserStore } from "@/lib/store";
-import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  images: {
-    unoptimized: true,
-  },
-};
-
-export default nextConfig;
 interface PageProps {
   params: Promise<{ slug: string }>;
 }
