@@ -9,6 +9,12 @@ import { ChatWidget } from "@/components/ai/ChatWidget";
 import { CATEGORIES, SUB_CATEGORIES } from "@/lib/topics-data";
 import { Icon } from "@/components/ui/Icon";
 
+export async function generateStaticParams() {
+  return CATEGORIES.map((category) => ({
+    slug: category.id,
+  }));
+}
+
 interface PageProps {
   params: Promise<{ slug: string }>;
 }
