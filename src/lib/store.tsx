@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "./supabase";
+import { createClient } from "@/utils/supabase/client";
 import { UserProgress } from "./types";
+import type { User } from "@supabase/supabase-js";
 
 const DEFAULT_PROFILE = {
   name: "Ujas",
@@ -20,6 +21,8 @@ const DEFAULT_STORE: UserProgress = {
   profile: DEFAULT_PROFILE
 };
 
+const LS_KEY = "tech_world_user_store";
+
 function calculateRankAndTitle(exp: number) {
   const level = Math.floor(exp / 500) + 1;
   let rank = `Novice (Lvl ${level})`;
@@ -36,7 +39,6 @@ function calculateRankAndTitle(exp: number) {
     title = "Mid-Level Developer";
   }
 
-  // Badges calculation
   const badges = ["Hello World"];
   if (exp >= 500) badges.push("Stack Master");
   if (exp >= 1500) badges.push("Systems Guru");
@@ -45,254 +47,187 @@ function calculateRankAndTitle(exp: number) {
   return { rank, title, badges };
 }
 
+function loadFromLS(): UserProgress {
+  try {
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) return JSON.parse(saved) as UserProgress;
+  } catch (_) {}
+  return DEFAULT_STORE;
+}
+
+function saveToLS(data: UserProgress) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+  } catch (_) {}
+}
+
 export function useUserStore() {
   const [store, setStore] = useState<UserProgress>(DEFAULT_STORE);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const supabase = createClient();
 
-  // Initialize Supabase auth and load user data
+  // Init: load from localStorage first, then sync with Supabase if logged in
   useEffect(() => {
-    // Get current session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    const local = loadFromLS();
+    setStore(local);
 
-      // Listen for auth changes
-      const {
-        data: { subscription }
-      } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await loadUserData(session.user.id);
-        } else {
-          // User signed out, reset to defaults but keep local copy
-          setStore(DEFAULT_STORE);
-        }
-      });
-
-      // Load initial data if user exists
-      if (session?.user) {
-        loadUserData(session.user.id);
-      } else {
-        // No user logged in, load from localStorage
-        loadFromLocalStorage();
+    if (supabase) {
+      supabase.auth.getUser().then((res: any) => {
+        setUser(res.data?.user ?? null);
         setIsLoaded(true);
-        setLoading(false);
-      }
-
-      return () => subscription.unsubscribe();
-    });
-  }, []);
-
-  // Load user data from Supabase
-  const loadUserData = useCallback(async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error && error.code !== 'PGRST116') { // PGRST116 means no rows found
-        console.error('Error fetching user profile:', error);
-        // Fallback to localStorage
-        loadFromLocalStorage();
-      } else if (data) {
-        // Found user data in database
-        setStore(data);
-      } else {
-        // No existing profile, create one from localStorage or defaults
-        const localData = loadFromLocalStorage();
-        if (localData !== DEFAULT_STORE) {
-          // Save local data to database
-          await saveUserData(localData);
-        }
-        setStore(localData);
-      }
-    } catch (error) {
-      console.error('Error loading user data:', error);
-      loadFromLocalStorage();
-    } finally {
-      setIsLoaded(true);
-      setLoading(false);
-    }
-  }, []);
-
-  // Load data from localStorage
-  const loadFromLocalStorage = useCallback((): UserProgress => {
-    try {
-      const saved = localStorage.getItem("tech_world_user_store");
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error("Failed to parse user store from localStorage", e);
-    }
-    return DEFAULT_STORE;
-  }, []);
-
-  // Save data to both localStorage and Supabase
-  const saveStore = useCallback(async (newStore: UserProgress) => {
-    setStore(newStore);
-
-    // Save to localStorage immediately for responsiveness
-    try {
-      localStorage.setItem("tech_world_user_store", JSON.stringify(newStore));
-    } catch (e) {
-      console.error("Failed to save to localStorage", e);
-    }
-
-    // Save to Supabase if user is logged in
-    if (user) {
-      try {
-        await saveUserData(newStore);
-      } catch (e) {
-        console.error("Failed to save to Supabase", e);
-        // Don't update state here as localStorage save succeeded
-      }
-    }
-  }, [user]);
-
-  // Save user data to Supabase
-  const saveUserData = useCallback(async (userData: UserProgress) => {
-    if (!user) return;
-
-    const { error } = await supabase
-      .from('user_profiles')
-      .upsert({
-        id: user.id,
-        ...userData,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: ['id']
       });
 
-    if (error) throw error;
+      const subscription = supabase.auth.onAuthStateChange((_event: any, session: any) => {
+        setUser(session?.user ?? null);
+      });
+
+      return () => {
+        subscription.data.subscription.unsubscribe();
+      };
+    } else {
+      setIsLoaded(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync Supabase data on login or local progress setup
+  useEffect(() => {
+    if (user && supabase) {
+      supabase
+        .from("user_progress")
+        .select("data")
+        .eq("user_id", user.id)
+        .maybeSingle()
+        .then((res: any) => {
+          if (res.data?.data) {
+            const remoteData = res.data.data as UserProgress;
+            setStore(remoteData);
+            saveToLS(remoteData);
+          } else {
+            // No remote data yet, push local data to initialize database
+            const local = loadFromLS();
+            supabase.from("user_progress").upsert({
+              user_id: user.id,
+              data: local,
+              updated_at: new Date().toISOString()
+            }, { onConflict: "user_id" }).then((res: any) => {
+              if (res?.error) console.error("Supabase init error:", res.error.message);
+            });
+          }
+        });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  const toggleBookmark = useCallback(async (slug: string) => {
-    await saveStore(prev => {
-      const bookmarks = prev.bookmarks.includes(slug)
-        ? prev.bookmarks.filter(s => s !== slug)
-        : [...prev.bookmarks, slug];
-      return { ...prev, bookmarks };
+  // Persist to localStorage + Supabase
+  const persist = useCallback((next: UserProgress) => {
+    setStore(next);
+    saveToLS(next);
+
+    if (user && supabase) {
+      supabase.from("user_progress").upsert({
+        user_id: user.id,
+        data: next,
+        updated_at: new Date().toISOString()
+      }, { onConflict: "user_id" }).then((res: any) => {
+        if (res?.error) console.error("Supabase sync error:", res.error.message);
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const toggleBookmark = useCallback((slug: string) => {
+    setStore(prev => {
+      const next: UserProgress = {
+        ...prev,
+        bookmarks: prev.bookmarks.includes(slug)
+          ? prev.bookmarks.filter(s => s !== slug)
+          : [...prev.bookmarks, slug]
+      };
+      saveToLS(next);
+      return next;
     });
   }, []);
 
-  const toggleCompleted = useCallback(async (slug: string) => {
-    await saveStore(async prev => {
+  const toggleCompleted = useCallback((slug: string) => {
+    setStore(prev => {
       const isCompleted = prev.completedTopics.includes(slug);
       const completedTopics = isCompleted
         ? prev.completedTopics.filter(s => s !== slug)
         : [...prev.completedTopics, slug];
-
-      // Award 100 EXP on completion, subtract on uncompletion
-      const expChange = isCompleted ? -100 : 100;
-      const newExp = Math.max(0, prev.profile.exp + expChange);
+      const newExp = Math.max(0, prev.profile.exp + (isCompleted ? -100 : 100));
       const { rank, title, badges } = calculateRankAndTitle(newExp);
-
-      return {
+      const next: UserProgress = {
         ...prev,
         completedTopics,
-        profile: {
-          ...prev.profile,
-          exp: newExp,
-          rank,
-          title,
-          badges
-        }
+        profile: { ...prev.profile, exp: newExp, rank, title, badges }
       };
-    });
-  }, []);
-
-  const saveNote = useCallback(async (slug: string, content: string) => {
-    await saveStore(prev => {
-      const notes = { ...prev.notes };
-      if (!content.trim()) {
-        delete notes[slug];
-      } else {
-        notes[slug] = content;
+      saveToLS(next);
+      if (user && supabase) {
+        supabase.from("user_progress").upsert(
+          { user_id: user.id, data: next, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" }
+        ).then((res: any) => { if (res?.error) console.error(res.error?.message); });
       }
-      return { ...prev, notes };
+      return next;
     });
-  }, []);
-
-  const submitQuizScore = useCallback(async (slug: string, score: number, total: number) => {
-    await saveStore(async prev => {
-      const existing = prev.quizScores[slug];
-      const prevScore = existing ? existing.score : 0;
-      const scoreDiff = score - prevScore;
-
-      // Award 50 EXP per net new correct answer
-      const expGain = scoreDiff > 0 ? scoreDiff * 50 : 0;
-      const newExp = prev.profile.exp + expGain;
-      const { rank, title, badges } = calculateRankAndTitle(newExp);
-
-      const quizScores = {
-        ...prev.quizScores,
-        [slug]: {
-          score,
-          total,
-          date: new Date().toLocaleDateString()
-        }
-      };
-
-      return {
-        ...prev,
-        quizScores,
-        profile: {
-          ...prev.profile,
-          exp: newExp,
-          rank,
-          title,
-          badges
-        }
-      };
-    });
-  }, []);
-
-  const updateProfileName = useCallback(async (newName: string) => {
-    await saveStore(prev => ({
-      ...prev,
-      profile: {
-        ...prev.profile,
-        name: newName || "Ujas"
-      }
-    }));
-  }, []);
-
-  const resetProgress = useCallback(async () => {
-    // Clear localStorage
-    localStorage.removeItem("tech_world_user_store");
-
-    // Reset in database if user is logged in
-    if (user) {
-      try {
-        await supabase
-          .from('user_profiles')
-          .update({
-            ...DEFAULT_STORE,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', user.id);
-      } catch (error) {
-        console.error('Error resetting progress in database:', error);
-      }
-    }
-
-    setStore(DEFAULT_STORE);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  const saveNote = useCallback((slug: string, content: string) => {
+    setStore(prev => {
+      const notes = { ...prev.notes };
+      if (!content.trim()) delete notes[slug];
+      else notes[slug] = content;
+      const next: UserProgress = { ...prev, notes };
+      saveToLS(next);
+      return next;
+    });
+  }, []);
+
+  const submitQuizScore = useCallback((slug: string, score: number, total: number) => {
+    setStore(prev => {
+      const existing = prev.quizScores[slug];
+      const scoreDiff = score - (existing?.score ?? 0);
+      const newExp = prev.profile.exp + (scoreDiff > 0 ? scoreDiff * 50 : 0);
+      const { rank, title, badges } = calculateRankAndTitle(newExp);
+      const next: UserProgress = {
+        ...prev,
+        quizScores: { ...prev.quizScores, [slug]: { score, total, date: new Date().toLocaleDateString() } },
+        profile: { ...prev.profile, exp: newExp, rank, title, badges }
+      };
+      saveToLS(next);
+      return next;
+    });
+  }, []);
+
+  const updateProfileName = useCallback((newName: string) => {
+    setStore(prev => {
+      const next: UserProgress = {
+        ...prev,
+        profile: { ...prev.profile, name: newName || "Ujas" }
+      };
+      saveToLS(next);
+      return next;
+    });
+  }, []);
+
+  const resetProgress = useCallback(() => {
+    localStorage.removeItem(LS_KEY);
+    setStore(DEFAULT_STORE);
+  }, []);
 
   return {
     store,
     isLoaded,
-    loading,
     user,
     toggleBookmark,
     toggleCompleted,
     saveNote,
     submitQuizScore,
     updateProfileName,
-    resetProgress
+    resetProgress,
+    persist
   };
 }
