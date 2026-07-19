@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Tech World - Elite Tech Encyclopedia & Learning Platform",
-  description: "Learn every major topic in Information Technology from beginner to expert with high-quality documentation, quizzes, flashcards, and interactive sandboxes.",
+  title: "UjasCode - Code • Learn • Innovate | Tech Encyclopedia",
+  description: "UjasCode — Learn every major topic in Information Technology from beginner to expert. High-quality docs, quizzes, flashcards, and a code playground.",
 };
 
 export default function RootLayout({

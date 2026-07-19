@@ -4,10 +4,10 @@ import { useState, useEffect } from "react";
 import { UserProgress } from "./types";
 
 const DEFAULT_PROFILE = {
-  name: "Tech Explorer",
-  title: "Junior Developer",
+  name: "Ujas",
+  title: "Full Stack Developer",
   exp: 0,
-  rank: "Novice (Lvl 1)",
+  rank: "Developer (Lvl 1)",
   badges: ["Hello World"]
 };
 
@@ -143,7 +143,7 @@ export function useUserStore() {
       ...store,
       profile: {
         ...store.profile,
-        name: newName || "Tech Explorer"
+        name: newName || "Ujas"
       }
     });
   };
