@@ -2,15 +2,18 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Sun, Moon, Search, Cpu, BookOpen, Terminal, GraduationCap, X, User } from "lucide-react";
+import { Sun, Moon, Search, Cpu, BookOpen, Terminal, GraduationCap, X, User, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useSession, signIn, signOut } from "next-auth/react";
 import { useUserStore } from "@/lib/store";
 import { PRE_POPULATED_TOPICS, SUB_CATEGORIES } from "@/lib/topics-data";
 
 export function Navbar() {
   const { theme, setTheme } = useTheme();
   const { store } = useUserStore();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -163,23 +166,62 @@ export function Navbar() {
               </button>
             )}
 
-            {/* Profile widget */}
-            <Link
-              href="/dashboard"
-              className="flex items-center space-x-2 p-1.5 rounded-full hover:bg-muted border border-transparent hover:border-border transition-all duration-200"
-            >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400">
-                <User size={16} />
+            {/* Auth widget */}
+            {status === "loading" ? (
+              <div className="h-9 w-9 rounded-full bg-muted animate-pulse" />
+            ) : session ? (
+              <div className="flex items-center space-x-2">
+                {/* Admin badge */}
+                {(session.user as { role?: string })?.role === "ADMIN" && (
+                  <Link
+                    href="/admin/dashboard"
+                    className="hidden sm:flex items-center space-x-1 px-2 py-1 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-colors text-[11px] font-bold"
+                  >
+                    <ShieldCheck size={13} />
+                    <span>Admin</span>
+                  </Link>
+                )}
+                {/* Avatar + name */}
+                <Link
+                  href="/dashboard"
+                  className="flex items-center space-x-2 p-1.5 rounded-full hover:bg-muted border border-transparent hover:border-border transition-all duration-200"
+                >
+                  {session.user?.image ? (
+                    <Image
+                      src={session.user.image}
+                      alt={session.user.name || "User"}
+                      width={32}
+                      height={32}
+                      className="rounded-full ring-2 ring-blue-500/30"
+                    />
+                  ) : (
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600">
+                      <User size={16} />
+                    </div>
+                  )}
+                  <div className="hidden sm:block text-left text-xs pr-1">
+                    <p className="font-semibold leading-tight text-foreground truncate max-w-[80px]">{session.user?.name}</p>
+                    <p className="text-[10px] text-muted-foreground leading-none">Logged in</p>
+                  </div>
+                </Link>
+                {/* Sign out */}
+                <button
+                  onClick={() => signOut()}
+                  title="Sign out"
+                  className="p-2 rounded-xl border border-border hover:bg-rose-500/10 hover:border-rose-500/20 hover:text-rose-500 text-muted-foreground transition-all duration-200"
+                >
+                  <LogOut size={16} />
+                </button>
               </div>
-              <div className="hidden sm:block text-left text-xs pr-2">
-                <p className="font-semibold leading-tight text-foreground truncate max-w-[80px]">
-                  {store.profile.name}
-                </p>
-                <p className="text-[10px] text-muted-foreground leading-none">
-                  {store.profile.rank.split(" ")[0]}
-                </p>
-              </div>
-            </Link>
+            ) : (
+              <button
+                onClick={() => signIn("github")}
+                className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-all duration-200 shadow-md shadow-blue-500/20"
+              >
+                <LogIn size={15} />
+                <span className="hidden sm:inline">Sign In</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
