@@ -16,8 +16,11 @@ interface Props {
   slug: string;
 }
 
+type TabType = "docs" | "architecture" | "code" | "guidelines" | "interactive" | "qa";
+
 export default function TopicPageClient({ slug }: Props) {
  
+  const topic = getTopicData(slug);
   const { store, toggleBookmark, toggleCompleted, saveNote, submitQuizScore, isLoaded } = useUserStore();
 
   const [activeTab, setActiveTab] = useState<TabType>("docs");
